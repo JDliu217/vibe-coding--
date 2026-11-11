@@ -21,7 +21,6 @@ export default function App() {
   // 真实累计计数（不因日志截断而失真）
   const counterRef = useRef(0);
   const successRef = useRef(0);
-  const blockedRef = useRef(0);
   const failedRef = useRef(0);
   const timerRef = useRef(null);
   const settingsRef = useRef({ batchSize, reuseIntensity, intervalMs });
@@ -39,7 +38,6 @@ export default function App() {
     counterRef.current += bs;
     for (const r of batch) {
       if (r.status === 'success') successRef.current += 1;
-      else if (r.status === 'blocked') blockedRef.current += 1;
       else failedRef.current += 1;
     }
     setRegistrations((prev) => [...prev, ...batch].slice(-1000));
@@ -68,7 +66,6 @@ export default function App() {
     }
     counterRef.current = 0;
     successRef.current = 0;
-    blockedRef.current = 0;
     failedRef.current = 0;
     setRegistrations([]);
     setRounds(0);
@@ -89,7 +86,6 @@ export default function App() {
 
   const total = counterRef.current;
   const success = successRef.current;
-  const blocked = blockedRef.current;
   const failed = failedRef.current;
   const isRunning = status === 'running';
   const logRows = [...registrations].reverse().slice(0, 50);
@@ -176,10 +172,6 @@ export default function App() {
           <div className="value success">{success}</div>
         </div>
         <div className="card">
-          <div className="label">被拦截</div>
-          <div className="value blocked">{blocked}</div>
-        </div>
-        <div className="card">
           <div className="label">失败</div>
           <div className="value failed">{failed}</div>
         </div>
@@ -214,7 +206,7 @@ export default function App() {
               <div className="cell">{r.network.isp} · {r.network.region}</div>
               <div className="cell">
                 <span className={`tag ${r.status}`}>
-                  {r.status === 'success' ? '成功' : r.status === 'blocked' ? '拦截' : '失败'}
+                  {r.status === 'success' ? '成功' : '失败'}
                 </span>
               </div>
             </div>

@@ -119,8 +119,8 @@ export function generateRegistrationBatch({
   const shuffled = [...networkDB].sort(() => 0.5 - Math.random());
   const ipSubset = shuffled.slice(0, distinctCount);
 
-  // 绝大多数注册成功，少量被风控拦截 / 失败
-  const statusPool = ['success', 'success', 'success', 'success', 'success', 'blocked', 'failed'];
+  // 攻击方可观测的原始注册结果：大部分成功，少数失败（验证码错误或请求被拒）
+  const statusPool = ['success', 'success', 'success', 'success', 'success', 'failed'];
 
   const batch = [];
   for (let i = 0; i < batchSize; i++) {
@@ -140,11 +140,7 @@ export function generateRegistrationBatch({
       device,
       network: ip,
       failureReason:
-        status === 'blocked'
-          ? '设备指纹已被风控封禁'
-          : status === 'failed'
-          ? '验证码校验失败'
-          : null,
+        status === 'failed' ? '注册请求被拒绝（验证码校验失败）' : null,
     });
   }
   return batch;
