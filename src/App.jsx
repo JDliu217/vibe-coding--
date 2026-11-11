@@ -1,184 +1,229 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
+import './App.css';
 import {
-  generateMockAccounts,
-  groupByDevice,
-  groupByIp,
-  ACCOUNT_COUNT,
-  DEVICE_POOL,
-  IP_POOL,
-} from './mockData.js';
+  generateDeviceDB,
+  generateRegistrationBatch,
+  DEFAULT_BATCH_SIZE,
+  DEFAULT_INTERVAL_MS,
+} from './mockData';
 
-/**
- * App.jsx - 攻防风控 Agent · 攻击模拟控制台
- *
- * 页面：单页，两个按钮（开始模拟 / 查看结果），一行运行状态。
- * 全部为前端模拟，不接后端。
- */
+const STATUS_TEXT = { idle: '未开始', running: '运行中', done: '已完成' };
 
 export default function App() {
-  const [status, setStatus] = useState('idle'); // 'idle' | 'running' | 'done'
-  const [accounts, setAccounts] = useState([]);
-  const [showResults, setShowResults] = useState(false);
+  const [deviceDB] = useState(() => generateDeviceDB());
+  const [registrations, setRegistrations] = useState([]);
+  const [status, setStatus] = useState('idle');
+  const [rounds, setRounds] = useState(0);
+  const [reuseIntensity, setReuseIntensity] = useState(0.5);
+  const [batchSize, setBatchSize] = useState(DEFAULT_BATCH_SIZE);
+  const [intervalMs, setIntervalMs] = useState(DEFAULT_INTERVAL_MS);
 
-  const STATUS_LABEL = {
-    idle: '未开始',
-    running: '运行中',
-    done: '已完成',
-  };
+  // 真实累计计数（不因日志截断而失真）
+  const counterRef = useRef(0);
+  const successRef = useRef(0);
+  const blockedRef = useRef(0);
+  const failedRef = useRef(0);
+  const timerRef = useRef(null);
+  const settingsRef = useRef({ batchSize, reuseIntensity, intervalMs });
+  settingsRef.current = { batchSize, reuseIntensity, intervalMs };
 
-  // 当状态切换为 done 时自动展开结果区
-  useEffect(() => {
-    if (status === 'done') {
-      setShowResults(true);
+  // 执行一轮注册（读取当前设置 + 设备资源库，写入模拟防守方库）
+  const step = useCallback(() => {
+    const { batchSize: bs, reuseIntensity: ri } = settingsRef.current;
+    const batch = generateRegistrationBatch({
+      batchSize: bs,
+      reuseIntensity: ri,
+      counter: counterRef.current,
+      deviceDB,
+    });
+    counterRef.current += bs;
+    for (const r of batch) {
+      if (r.status === 'success') successRef.current += 1;
+      else if (r.status === 'blocked') blockedRef.current += 1;
+      else failedRef.current += 1;
     }
-  }, [status]);
+    setRegistrations((prev) => [...prev, ...batch].slice(-1000));
+    setRounds((r) => r + 1);
+  }, [deviceDB]);
 
-  const STATUS_COLOR = {
-    idle: '#9ca3af',
-    running: '#3b82f6',
-    done: '#10b981',
-  };
-
-  // 开始模拟：设置运行中，短延时后生成数据并标记完成
-  const handleStartSimulation = () => {
+  const start = () => {
+    if (timerRef.current) return;
     setStatus('running');
-    setAccounts([]);
-    setShowResults(false);
-
-    // 模拟攻击过程耗时（进度反馈，约 1.2 秒）
-    setTimeout(() => {
-      const newAccounts = generateMockAccounts(ACCOUNT_COUNT);
-      setAccounts(newAccounts);
-      setStatus('done');
-    }, 1200);
+    step();
+    timerRef.current = setInterval(step, settingsRef.current.intervalMs);
   };
 
-  // 查看结果：仅在已完成时展开结果面板；若无数据则轻量提示
-  const handleViewResults = () => {
-    if (status === 'done' && accounts.length > 0) {
-      setShowResults(true);
-    } else if (status !== 'done') {
-      // 可在此处加 toast 提示，此处保持静默，不影响主流程
-      return;
+  const stop = () => {
+    if (timerRef.current) {
+      clearInterval(timerRef.current);
+      timerRef.current = null;
     }
+    setStatus('done');
   };
 
-  const deviceGroups = groupByDevice(accounts);
-  const ipGroups = groupByIp(accounts);
-
-  const formatAccounts = (ids, limit = 6) => {
-    if (ids.length <= limit) return ids.join('，');
-    return `${ids.slice(0, limit).join('，')} 等 ${ids.length} 个`;
+  const reset = () => {
+    if (timerRef.current) {
+      clearInterval(timerRef.current);
+      timerRef.current = null;
+    }
+    counterRef.current = 0;
+    successRef.current = 0;
+    blockedRef.current = 0;
+    failedRef.current = 0;
+    setRegistrations([]);
+    setRounds(0);
+    setStatus('idle');
   };
+
+  useEffect(() => () => {
+    if (timerRef.current) clearInterval(timerRef.current);
+  }, []);
+
+  // 运行中调整间隔时立即生效
+  useEffect(() => {
+    if (status === 'running') {
+      clearInterval(timerRef.current);
+      timerRef.current = setInterval(step, intervalMs);
+    }
+  }, [intervalMs, status, step]);
+
+  const total = counterRef.current;
+  const success = successRef.current;
+  const blocked = blockedRef.current;
+  const failed = failedRef.current;
+  const isRunning = status === 'running';
+  const logRows = [...registrations].reverse().slice(0, 50);
 
   return (
     <div className="app">
-      {/* 头部 */}
-      <header className="header">
-        <div className="badge">攻防风控 Agent</div>
+      <header className="app-header">
+        <span className="badge">攻防风控 Agent</span>
         <h1>攻击模拟控制台</h1>
-        <p className="sub">
-          模拟黑产批量注册攻击（多开 + IP 池），展示账号聚类与共用设备/网络特征
-        </p>
+        <p className="sub">批量注册攻击模拟 · 有限设备资源 + 出口复用</p>
       </header>
 
-      {/* 运行状态栏 */}
       <div className="status-bar">
-        <span className="status-dot" style={{ backgroundColor: STATUS_COLOR[status] }}></span>
-        <span className="status-text">{STATUS_LABEL[status]}</span>
+        <span className={`pill ${status}`}>
+          <span className="dot" />
+          {STATUS_TEXT[status]}
+        </span>
+        <span className="status-hint">
+          每轮 {batchSize} 个账号 · 间隔 {intervalMs} ms · 出口复用强度 {(reuseIntensity * 100).toFixed(0)}%
+        </span>
       </div>
 
-      {/* 操作区：两个按钮 */}
-      <div className="actions">
-        <button className="btn btn-primary" onClick={handleStartSimulation} disabled={status === 'running'}>
-          {status === 'running' ? '模拟进行中...' : '开始模拟'}
-        </button>
-        <button
-          className="btn btn-secondary"
-          onClick={handleViewResults}
-          disabled={status !== 'done' || accounts.length === 0}
-        >
-          查看结果
-        </button>
-      </div>
+      <div className="controls">
+        <div className="control-group">
+          <label>
+            出口复用强度 <span className="val">{(reuseIntensity * 100).toFixed(0)}%</span>
+          </label>
+          <input
+            type="range"
+            min="0"
+            max="100"
+            value={Math.round(reuseIntensity * 100)}
+            onChange={(e) => setReuseIntensity(parseInt(e.target.value, 10) / 100)}
+            disabled={false}
+          />
+          <span className="range-labels">
+            <span>低（IP 分散）</span>
+            <span>高（IP 集中）</span>
+          </span>
+        </div>
 
-      {/* 参数说明卡片 */}
-      <div className="params-card">
-        <p className="params-title">模拟参数</p>
-        <div className="params-grid">
-          <div className="param-item">
-            <span className="param-key">账号总数</span>
-            <span className="param-value">{ACCOUNT_COUNT}</span>
-          </div>
-          <div className="param-item">
-            <span className="param-key">模拟设备</span>
-            <span className="param-value">{DEVICE_POOL.join('，')}</span>
-          </div>
-          <div className="param-item">
-            <span className="param-key">模拟 IP</span>
-            <span className="param-value">{IP_POOL.join('，')}</span>
-          </div>
+        <div className="control-group small">
+          <label>每轮账号数</label>
+          <input
+            type="number"
+            min="1"
+            max="100"
+            value={batchSize}
+            onChange={(e) => setBatchSize(Math.max(1, Math.min(100, parseInt(e.target.value, 10) || 1)))}
+          />
+        </div>
+
+        <div className="control-group small">
+          <label>注册间隔 (ms)</label>
+          <input
+            type="number"
+            min="500"
+            max="30000"
+            step="500"
+            value={intervalMs}
+            onChange={(e) => setIntervalMs(Math.max(500, Math.min(30000, parseInt(e.target.value, 10) || 500)))}
+          />
+        </div>
+
+        <div className="actions">
+          <button className={`btn ${isRunning ? 'btn-stop' : 'btn-start'}`} onClick={isRunning ? stop : start}>
+            {isRunning ? '停止注册' : '开始注册'}
+          </button>
+          {status !== 'idle' && (
+            <button className="btn btn-reset" onClick={reset}>
+              重置
+            </button>
+          )}
         </div>
       </div>
 
-      {/* 结果区 */}
-      {showResults && accounts.length > 0 && (
-        <section className="results">
-          <h2>模拟结果</h2>
+      <div className="stats">
+        <div className="card">
+          <div className="label">总注册数</div>
+          <div className="value accent">{total}</div>
+        </div>
+        <div className="card">
+          <div className="label">成功</div>
+          <div className="value success">{success}</div>
+        </div>
+        <div className="card">
+          <div className="label">被拦截</div>
+          <div className="value blocked">{blocked}</div>
+        </div>
+        <div className="card">
+          <div className="label">失败</div>
+          <div className="value failed">{failed}</div>
+        </div>
+        <div className="card">
+          <div className="label">已执行轮数</div>
+          <div className="value">{rounds}</div>
+        </div>
+      </div>
 
-          {/* 顶部统计卡片 */}
-          <div className="stats-cards">
-            <div className="stat-card">
-              <span className="stat-label">模拟注册账号总数</span>
-              <span className="stat-value">{accounts.length}</span>
-            </div>
-            <div className="stat-card">
-              <span className="stat-label">复用设备数</span>
-              <span className="stat-value">{deviceGroups.length}</span>
-            </div>
-            <div className="stat-card">
-              <span className="stat-label">复用 IP 数</span>
-              <span className="stat-value">{ipGroups.length}</span>
-            </div>
+      <section className="log">
+        <div className="log-head">
+          <h2>实时注册日志</h2>
+          <span className="log-note">原始数据，未做风险聚合（聚合分析属于防守方）</span>
+        </div>
+        <div className="log-table">
+          <div className="row head">
+            <div className="cell">时间</div>
+            <div className="cell">手机号</div>
+            <div className="cell">设备ID</div>
+            <div className="cell">设备型号</div>
+            <div className="cell">IP</div>
+            <div className="cell">运营商 · 地区</div>
+            <div className="cell">状态</div>
           </div>
-
-          {/* 共用设备列表 */}
-          <div className="group-section">
-            <h3>共用设备（多开聚类）</h3>
-            <div className="group-list">
-              {deviceGroups.map((g) => (
-                <div key={g.deviceId} className="group-item">
-                  <div className="group-head">
-                    <span className="group-id">{g.deviceId}</span>
-                    <span className="group-count">{g.count} 个账号</span>
-                  </div>
-                  <div className="group-accounts">{formatAccounts(g.accounts)}</div>
-                </div>
-              ))}
+          {logRows.map((r) => (
+            <div key={r.id} className={`row ${r.status}`}>
+              <div className="cell mono">{r.createdAt.slice(11)}</div>
+              <div className="cell mono">{r.phone}</div>
+              <div className="cell mono">{r.device?.deviceId ?? '-'}</div>
+              <div className="cell">{r.device?.deviceModel ?? '-'}</div>
+              <div className="cell mono">{r.network.ip}</div>
+              <div className="cell">{r.network.isp} · {r.network.region}</div>
+              <div className="cell">
+                <span className={`tag ${r.status}`}>
+                  {r.status === 'success' ? '成功' : r.status === 'blocked' ? '拦截' : '失败'}
+                </span>
+              </div>
             </div>
-          </div>
-
-          {/* 共用网络（IP）列表 */}
-          <div className="group-section">
-            <h3>共用网络（IP 池复用）</h3>
-            <div className="group-list">
-              {ipGroups.map((g) => (
-                <div key={g.ip} className="group-item">
-                  <div className="group-head">
-                    <span className="group-id">{g.ip}</span>
-                    <span className="group-count">{g.count} 个账号</span>
-                  </div>
-                  <div className="group-accounts">{formatAccounts(g.accounts)}</div>
-                </div>
-              ))}
-            </div>
-          </div>
-        </section>
-      )}
-
-      {showResults && accounts.length === 0 && (
-        <div className="empty-tip">暂无模拟数据，请先点击“开始模拟”。</div>
-      )}
+          ))}
+        </div>
+        {registrations.length === 0 && (
+          <div className="empty">尚未开始注册，点击“开始注册”发起攻击模拟。</div>
+        )}
+      </section>
     </div>
   );
 }

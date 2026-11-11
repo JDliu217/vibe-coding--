@@ -1,110 +1,151 @@
-/**
- * mockData.js
- *
- * 固定参数生成模拟注册账号数据，并按设备 / IP 做聚合。
- * 整个为纯前端模拟，无需后端，方便面试演示“攻击聚类”特征。
- */
+// 攻击资源库（模拟“数据库表”：每行一台设备，列是注册时的设备指纹特征）
+// 资源是有限、固定的集合，用来模拟攻击方多开设备 + 出口复用的真实约束。
+//
+// 说明：当前为纯前端模拟。networkDB / deviceDB 相当于攻击侧的资源表，
+// 注册记录会不断累加，等价于“写入防御方数据库”。
 
-// ---------------- 固定参数（可面试讲解） ----------------
-// 本次模拟生成的账号总数
-export const ACCOUNT_COUNT = 60;
+export const DEVICE_COUNT = 100;
+export const DEFAULT_BATCH_SIZE = 20;
+export const DEFAULT_INTERVAL_MS = 3000;
 
-// 模拟多开设备池（手机模拟器 / 多开实例）
-export const DEVICE_POOL = [
-  'EMU-01', 'EMU-02', 'EMU-03', 'EMU-04', 'EMU-05', 'EMU-06',
+// 有限的网络资源集合（出口 IP 池）
+export const NETWORK_DB = [
+  { ip: '103.21.58.10', ipType: '住宅宽带', region: '广东 深圳', isp: '中国移动', asn: 'AS56044' },
+  { ip: '119.3.124.5', ipType: '住宅宽带', region: '北京 朝阳区', isp: '中国联通', asn: 'AS4837' },
+  { ip: '36.136.22.9', ipType: '移动 4G/5G', region: '上海 徐汇区', isp: '中国移动', asn: 'AS56046' },
+  { ip: '183.62.124.2', ipType: '住宅宽带', region: '广东 广州', isp: '中国电信', asn: 'AS4134' },
+  { ip: '220.181.108.15', ipType: '数据中心', region: '北京 海淀区', isp: '阿里云', asn: 'AS45102' },
+  { ip: '39.156.69.7', ipType: '移动 4G/5G', region: '四川 成都', isp: '中国移动', asn: 'AS56044' },
+  { ip: '120.232.15.20', ipType: '数据中心', region: '上海 松江区', isp: '腾讯云', asn: 'AS45090' },
+  { ip: '182.91.24.40', ipType: '住宅宽带', region: '浙江 杭州', isp: '中国电信', asn: 'AS4134' },
+  { ip: '111.17.16.3', ipType: '移动 4G/5G', region: '湖北 武汉', isp: '中国移动', asn: 'AS56048' },
+  { ip: '211.138.104.50', ipType: '住宅宽带', region: '四川 成都', isp: '中国联通', asn: 'AS4837' },
+  { ip: '47.100.128.90', ipType: '数据中心', region: '北京 朝阳区', isp: '阿里云', asn: 'AS45102' },
+  { ip: '8.210.152.60', ipType: '数据中心', region: '上海 徐汇区', isp: '腾讯云', asn: 'AS45090' },
 ];
 
-// 模拟 IP 池（共用网络，模拟 IP 代理池）
-export const IP_POOL = [
-  '103.21.58.12', '103.21.58.15', '103.21.58.21', '103.21.58.33',
-  '45.142.120.8', '45.142.120.11', '45.142.120.19', '203.0.113.45',
+const DEVICE_MODELS = [
+  'iPhone 15 Pro', 'iPhone 14', 'Xiaomi 13', 'Xiaomi 14 Pro', 'Samsung Galaxy S23',
+  'Huawei P60', 'Huawei Mate 60', 'OPPO Find X6', 'vivo X90', 'iPad Air 5',
+  'MacBook Air M2', 'Dell XPS 13', 'ThinkPad X1 Carbon', 'Honor Magic5', 'OnePlus 11',
+  'Google Pixel 8', 'Sony Xperia 1 V', 'Redmi K70', 'iQOO 12', 'Meizu 20',
 ];
 
-// 手机号前缀，方便生成看起来像手机号的字符串
-const PHONE_PREFIXES = ['138', '139', '150', '151', '152', '153', '155', '156', '157', '158', '159'];
+const OS_VERSIONS = [
+  'iOS 17.2', 'iOS 16.6', 'Android 14', 'Android 13', 'Android 12',
+  'Windows 11 22H2', 'Windows 10 21H2', 'macOS Sonoma 14', 'iPadOS 17', 'HarmonyOS 4',
+];
 
-// ---------------- 工具函数 ----------------
+const BROWSERS = ['Chrome 120.0', 'Chrome 119.0', 'Safari 17.2', 'Edge 120.0', 'Firefox 121.0'];
 
-/**
- * 伪随机数生成器：种子固定可复现，面试演示更稳定
- */
-let seed = Date.now();
-function pseudoRandom(min, max) {
-  seed = (seed * 1103515245 + 12345) % 2147483648;
-  return min + Math.floor((seed / 2147483648) * (max - min + 1));
+const SCREEN_RESOLUTIONS = ['1179x2556', '1080x2400', '1440x3200', '2532x1170', '2880x1864', '1920x1080', '1366x768', '2560x1600'];
+
+const TIMEZONES = ['Asia/Shanghai', 'Asia/Hong_Kong', 'Asia/Tokyo', 'America/New_York', 'Europe/London', 'Asia/Singapore'];
+
+const LANGUAGES = ['zh-CN,zh;q=0.9', 'en-US,en;q=0.9', 'zh-TW,zh;q=0.9', 'en-GB,en;q=0.9'];
+
+const WEBGL_RENDERERS = ['Adreno (TM) 740', 'Apple GPU', 'Intel Iris Xe', 'NVIDIA GeForce RTX 3060', 'Mali-G710', 'Radeon RX 6600'];
+
+function randPick(arr) {
+  return arr[Math.floor(Math.random() * arr.length)];
 }
 
-/**
- * 随机从池中抽取，带“轻度偏置”：
- * 让前几个设备/IP 被抽到概率更高，模拟攻击者喜欢复用少量优质设备/IP。
- */
-function biasedPick(pool) {
-  const idx = pseudoRandom(0, pool.length - 1);
-  // 30% 概率回落到前 1/3 的热门条目
-  if (pseudoRandom(0, 99) < 30) {
-    const hotCount = Math.ceil(pool.length / 3);
-    return pool[pseudoRandom(0, hotCount - 1)];
+function randInt(min, max) {
+  return Math.floor(Math.random() * (max - min + 1)) + min;
+}
+
+function hashStr(str) {
+  let h = 0;
+  for (let i = 0; i < str.length; i++) {
+    h = ((h << 5) - h + str.charCodeAt(i)) | 0;
   }
-  return pool[idx];
+  return Math.abs(h).toString(16).padStart(8, '0');
 }
 
-function randomPhone() {
-  const prefix = PHONE_PREFIXES[pseudoRandom(0, PHONE_PREFIXES.length - 1)];
-  const suffix = String(pseudoRandom(10000000, 99999999));
-  return `${prefix}${suffix}`;
-}
-
-/**
- * 生成一批模拟注册账号。
- * 每个账号：{ id, phone, deviceId, ip, createdAt }
- * 设备与 IP 从固定池中抽取，部分会被大量复用（聚类特征）。
- */
-export function generateMockAccounts(count = ACCOUNT_COUNT) {
-  const accounts = [];
-  for (let i = 1; i <= count; i++) {
-    accounts.push({
-      id: `ACC-${String(i).padStart(4, '0')}`,
-      phone: randomPhone(),
-      deviceId: biasedPick(DEVICE_POOL),
-      ip: biasedPick(IP_POOL),
-      createdAt: new Date().toLocaleString('zh-CN', {
-        hour12: false,
-      }),
+// 生成固定的设备资源库：100 台设备，每台带完整指纹特征（模拟表的一行）
+export function generateDeviceDB() {
+  const devices = [];
+  for (let i = 0; i < DEVICE_COUNT; i++) {
+    const model = randPick(DEVICE_MODELS);
+    const os = randPick(OS_VERSIONS);
+    const browser = randPick(BROWSERS);
+    const isMobile = /iOS|iPadOS|Android|HarmonyOS/.test(os);
+    const ua = `${browser} (${os}) ${model}`;
+    devices.push({
+      deviceId: `DEV-${String(i + 1).padStart(3, '0')}`,
+      deviceModel: model,
+      osVersion: os,
+      osArch: /Windows|macOS/.test(os) ? 'x86_64' : 'arm64',
+      browserName: browser.split(' ')[0],
+      browserVersion: browser,
+      userAgent: ua,
+      screenResolution: randPick(SCREEN_RESOLUTIONS),
+      colorDepth: 24,
+      devicePixelRatio: Math.random() > 0.5 ? 2 : 1,
+      platform: /Windows/.test(os) ? 'Win32' : /macOS/.test(os) ? 'MacIntel' : 'Linux arm64',
+      hardwareConcurrency: [4, 6, 8, 12, 16][randInt(0, 4)],
+      deviceMemory: [4, 8, 16][randInt(0, 2)],
+      touchSupport: isMobile || Math.random() > 0.5,
+      webGLRenderer: randPick(WEBGL_RENDERERS),
+      audioContextFingerprint: hashStr(ua + model + os),
+      canvasFingerprint: hashStr(model + ua + browser),
+      timezone: randPick(TIMEZONES),
+      language: randPick(LANGUAGES),
+      cookieEnabled: true,
+      localStorageEnabled: true,
+      webrtcLocalIP: `192.168.${randInt(0, 255)}.${randInt(2, 254)}`,
+      fontListHash: hashStr(model + os + browser + 'fonts'),
     });
   }
-  return accounts;
+  return devices;
 }
 
-/**
- * 按设备聚合：[{ deviceId, count, accounts: [id...] }]
- * 按 count 降序排列，便于展示“共用设备最多”的设备
- */
-export function groupByDevice(accounts) {
-  const map = new Map();
-  for (const acc of accounts) {
-    if (!map.has(acc.deviceId)) {
-      map.set(acc.deviceId, { deviceId: acc.deviceId, count: 0, accounts: [] });
-    }
-    const g = map.get(acc.deviceId);
-    g.count += 1;
-    g.accounts.push(acc.id);
-  }
-  return Array.from(map.values()).sort((a, b) => b.count - a.count);
-}
+// 生成一轮注册记录：模拟攻击端读取设备特征，把账号“注册”进防守方库。
+// batchSize      本轮注册账号数
+// reuseIntensity 0~1，越大本轮选用的 IP 越少（出口复用越严重）
+// counter        全局账号递增计数（由调用方维护）
+export function generateRegistrationBatch({
+  batchSize = DEFAULT_BATCH_SIZE,
+  reuseIntensity = 0.5,
+  counter = 0,
+  deviceDB = [],
+  networkDB = NETWORK_DB,
+} = {}) {
+  const now = new Date();
+  const stamp = now.toISOString().replace('T', ' ').slice(0, 19);
 
-/**
- * 按 IP 聚合：[{ ip, count, accounts: [id...] }]
- * 按 count 降序排列
- */
-export function groupByIp(accounts) {
-  const map = new Map();
-  for (const acc of accounts) {
-    if (!map.has(acc.ip)) {
-      map.set(acc.ip, { ip: acc.ip, count: 0, accounts: [] });
-    }
-    const g = map.get(acc.ip);
-    g.count += 1;
-    g.accounts.push(acc.id);
+  // 本轮选用的 IP 子集：复用强度越高，选中的 IP 越少
+  const distinctCount = Math.max(1, Math.ceil(networkDB.length * (1 - reuseIntensity)));
+  const shuffled = [...networkDB].sort(() => 0.5 - Math.random());
+  const ipSubset = shuffled.slice(0, distinctCount);
+
+  // 绝大多数注册成功，少量被风控拦截 / 失败
+  const statusPool = ['success', 'success', 'success', 'success', 'success', 'blocked', 'failed'];
+
+  const batch = [];
+  for (let i = 0; i < batchSize; i++) {
+    const n = counter + i + 1;
+    const device = deviceDB.length
+      ? deviceDB[Math.floor(Math.random() * deviceDB.length)]
+      : null;
+    const ip = ipSubset[Math.floor(Math.random() * ipSubset.length)];
+    const status = randPick(statusPool);
+
+    batch.push({
+      id: `REG-${String(n).padStart(5, '0')}`,
+      phone: `138${String(n).padStart(8, '0')}`,
+      email: `user${n}@example.com`,
+      status,
+      createdAt: stamp,
+      device,
+      network: ip,
+      failureReason:
+        status === 'blocked'
+          ? '设备指纹已被风控封禁'
+          : status === 'failed'
+          ? '验证码校验失败'
+          : null,
+    });
   }
-  return Array.from(map.values()).sort((a, b) => b.count - a.count);
+  return batch;
 }
