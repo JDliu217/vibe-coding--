@@ -3,6 +3,7 @@
 目标提交 `a04caf4c57e334a796adf171593b8d5621d09f50`，基线 `15972701720df0952a8d87d48d7cffb78d1a6a85`。验证完成后才提交本目录，原报告不重新绑定到归档提交。
 
 - [审查结果](审查结果.md)：3项确认的新P2及边界。
+- [需求一致性补充D1](需求一致性补充.md)：本对话的成功账号资产定义与仓库07投递日志定义冲突，修复Agent需同时核对。
 - [完整RQG报告](修改说明.md)与[最终输出](verify-output.txt)：退出1；工具生成的 `final_status: PENDING_VERIFY` 不由只读verify回写，以输出为准。
 - [后端结果](backend-results.json)与[脚本](backend-review.py.txt)：真实MySQL事务、回滚、并发。
 - [浏览器结果](browser-results.json)与[脚本](browser-review.mjs.txt)：受控API下的响应交错。
