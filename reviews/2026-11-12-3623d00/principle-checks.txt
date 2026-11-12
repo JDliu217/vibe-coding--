@@ -1,0 +1,6 @@
+附加行为检查执行结果（2026-11-12，Asia/Shanghai）
+
+PASS: 1000 sequential attempts have unique IDs, reference fixed device/IP pools, preserve device fields, and expose only success/failed outcomes
+PASS: observed start/stop/reset network requests remain local; no real registration destination
+
+执行方式：Node ESM 内联检查，直接导入 src/mockData.js，连续50轮、每轮20条，counter从0递增；检查资源对象引用、ID、字段不变及成败原因契约。浏览器使用既有 Playwright 与 Chromium 访问本地5173，记录启动、停止、重置过程的请求目标并断言仅为127.0.0.1。底层进程退出0。
