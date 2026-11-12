@@ -28,5 +28,8 @@ Thumbs.db
 # Python
 attacker/server/.venv/
 consumer/server/.venv/
+consumer/.venv/
+consumer/.vite/
+.next/
 __pycache__/
 *.pyc
