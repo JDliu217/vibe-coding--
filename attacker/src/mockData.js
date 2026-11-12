@@ -1,8 +1,8 @@
 // 攻击资源库（模拟“数据库表”：每行一台设备，列是注册时的设备指纹特征）
 // 资源是有限、固定的集合，用来模拟攻击方多开设备 + 出口复用的真实约束。
 //
-// 说明：当前为纯前端模拟。networkDB / deviceDB 相当于攻击侧的资源表，
-// 注册记录会不断累加，等价于“写入防御方数据库”。
+// 说明：这里只生成攻击方资源种子，由 attacker/server/seed.js 写入本地库。
+// 注册记录由 FastAPI 写入 attack_console，不在浏览器里累计。
 
 export const DEVICE_COUNT = 100;
 export const DEFAULT_BATCH_SIZE = 20;
