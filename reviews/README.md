@@ -6,6 +6,7 @@
 
 | 报告 | 被审查代码提交 | 审查范围 | 结论 |
 | --- | --- | --- | --- |
+| [2026-11-12 消费端新人领券](2026-11-12-e8d62ad/审查结果.md) | [`e8d62ad769fa45f4a2ceac89015dfff2fa432f6e`](https://github.com/JDliu217/vibe-coding--/commit/e8d62ad769fa45f4a2ceac89015dfff2fa432f6e) | 2d11433至e8d62ad，新增 consumer 领券站点 | 单人领券路径可用；并发与风控未测；RQG未运行，不记为通过 |
 | [2026-11-12 攻击方目录归位](2026-11-12-9e8ad0d/审查结果.md) | [`9e8ad0d041b229c4f5db8fa60771b523c746621e`](https://github.com/JDliu217/vibe-coding--/commit/9e8ad0d041b229c4f5db8fa60771b523c746621e) | 64adccd至9e8ad0d，攻击方移入 attacker/ | 读取链路可用；写路径未复测；RQG未运行，不记为通过 |
 | [2026-11-12 FastAPI/MySQL接入审查](2026-11-12-a04caf4/审查结果.md) | [`a04caf4c57e334a796adf171593b8d5621d09f50`](https://github.com/JDliu217/vibe-coding--/commit/a04caf4c57e334a796adf171593b8d5621d09f50) | 1597270至a04caf4后端接入；附需求一致性补充D1 | 3项新增P2；成功账号资产口径冲突另记；事务/回滚通过；RQG拒绝 |
 | [2026-11-12 原则性复核](2026-11-12-3623d00/审查结果.md) | [`3623d00eb9995e72f54bd72e0b5bda5158903229`](https://github.com/JDliu217/vibe-coding--/commit/3623d00eb9995e72f54bd72e0b5bda5158903229) | 用户确认暂无新源码；复核现有调度、计数、资源引用和采样，不扩展需求 | 两项已有P2正确性问题仍在；时间歧义另记，仿真局限暂缓；RQG最终REJECT |
