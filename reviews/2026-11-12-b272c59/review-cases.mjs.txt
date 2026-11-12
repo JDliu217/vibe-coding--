@@ -1,0 +1,105 @@
+import assert from 'node:assert/strict';
+import { chromium } from '/workspace/.onboarding-tools/node_modules/playwright/index.mjs';
+import { generateDeviceDB, generateRegistrationBatch, NETWORK_DB } from '/workspace/vibe-coding--/src/mockData.js';
+
+const results = [];
+async function check(name, fn) {
+  try { const evidence = await fn(); results.push({ name, status: 'PASS', evidence }); }
+  catch (error) { results.push({ name, status: 'FAIL', error: error.message }); }
+}
+const browser = await chromium.launch({ executablePath: '/usr/bin/chromium', headless: true, args: ['--no-sandbox'] });
+const context = await browser.newContext({ timezoneId: 'Asia/Shanghai' });
+const page = await context.newPage();
+const errors = [];
+page.on('pageerror', e => errors.push(e.message));
+await page.clock.install({ time: new Date('2026-11-12T09:00:00Z') });
+await page.goto('http://127.0.0.1:5173/');
+await page.getByRole('heading', { name: '攻击模拟控制台', exact: true }).waitFor();
+const nums = page.locator('input[type=number]');
+const values = () => page.locator('.stats .value').allTextContents();
+
+await check('default batch, interval changes, caps, stop, resume and reset', async () => {
+  await page.getByRole('button', { name: '开始注册', exact: true }).click();
+  assert.equal((await values())[0], '20');
+  await page.clock.runFor(3000);
+  assert.equal((await values())[0], '40');
+  await nums.nth(0).fill('100');
+  await nums.nth(1).fill('500');
+  await page.clock.runFor(5000);
+  let v = (await values()).map(Number);
+  assert.equal(v[0], 1040);
+  assert.equal(v[0], v[1] + v[2]);
+  assert.equal(v[3], 12);
+  assert.equal(await page.locator('.log-table .row:not(.head)').count(), 50);
+  await page.getByRole('button', { name: '停止注册', exact: true }).click();
+  await page.clock.runFor(2000);
+  assert.deepEqual((await values()).map(Number), v);
+  await page.getByRole('button', { name: '开始注册', exact: true }).click();
+  assert.equal((await values())[0], '1140');
+  await page.getByRole('button', { name: '重置', exact: true }).click();
+  await page.clock.runFor(2000);
+  assert.deepEqual(await values(), ['0', '0', '0', '0']);
+  assert.equal(await page.locator('.pill').innerText(), '未开始');
+  return 'Default timing; live batch/interval updates; totals beyond 1000; 50 log row cap; no timer after stop/reset; resume adds one batch';
+});
+
+await check('typing 1000 ms produces a 1000 ms interval', async () => {
+  await nums.nth(1).fill('3000');
+  await nums.nth(1).press('ControlOrMeta+A');
+  await nums.nth(1).pressSequentially('1000');
+  const actual = await nums.nth(1).inputValue();
+  assert.equal(actual, '1000', `Typed 1000; actual interval input is ${actual}`);
+});
+
+await check('log time matches browser local time or names its UTC timezone', async () => {
+  await page.getByRole('button', { name: '开始注册', exact: true }).click();
+  const logTime = await page.locator('.log-table .row:not(.head) .cell').first().innerText();
+  const local = await page.evaluate(() => [new Date().getHours(), new Date().getMinutes(), new Date().getSeconds()].map(x => String(x).padStart(2, '0')).join(':'));
+  const logText = await page.locator('.log').innerText();
+  assert.ok(logTime === local || /UTC|GMT|协调世界时/.test(logText), `Asia/Shanghai browser local=${local}, log=${logTime}, no UTC indicator`);
+});
+await page.getByRole('button', { name: '重置', exact: true }).click();
+
+await check('no runtime exceptions', async () => { assert.deepEqual(errors, []); return errors; });
+await browser.close();
+
+// Deterministic random input; assertions concern domain behavior rather than implementation structure.
+let seed = 0x12345678;
+const originalRandom = Math.random;
+Math.random = () => { seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0; return seed / 2 ** 32; };
+
+await check('fixed resource identity and reuse within one simulation', async () => {
+  const devices = generateDeviceDB();
+  assert.equal(devices.length, 100);
+  assert.equal(new Set(devices.map(d => d.deviceId)).size, 100);
+  for (const intensity of [0, 0.5, 1]) {
+    const batch = generateRegistrationBatch({ batchSize: 100, reuseIntensity: intensity, deviceDB: devices });
+    assert.equal(batch.length, 100);
+    assert.ok(batch.every(r => devices.includes(r.device) && NETWORK_DB.includes(r.network)));
+    assert.ok(batch.every(r => ['success', 'failed'].includes(r.status)));
+    assert.ok(new Set(batch.map(r => r.network.ip)).size <= Math.max(1, Math.ceil(12 * (1 - intensity))));
+    assert.equal(new Set(batch.map(r => r.id)).size, 100);
+  }
+  return '100 unique devices; records reuse the same objects; success/failed only; IP subset bound at 0%, 50%, 100%';
+});
+
+await check('device model and operating system describe possible devices', async () => {
+  const devices = generateDeviceDB();
+  const incompatible = devices.filter(d => /^(iPhone)/.test(d.deviceModel) ? !/^iOS/.test(d.osVersion) : /^iPad/.test(d.deviceModel) ? !/^iPadOS/.test(d.osVersion) : /^MacBook/.test(d.deviceModel) ? !/^macOS/.test(d.osVersion) : false);
+  assert.equal(incompatible.length, 0, `Incompatible Apple devices=${incompatible.length}; examples=${JSON.stringify(incompatible.slice(0, 3).map(({ deviceId, deviceModel, osVersion, platform }) => ({ deviceId, deviceModel, osVersion, platform })))}`);
+});
+
+await check('network resource selection has no large arbitrary array-position bias', async () => {
+  const counts = Object.fromEntries(NETWORK_DB.map(x => [x.ip, 0]));
+  for (let i = 0; i < 24000; i++) {
+    const [record] = generateRegistrationBatch({ batchSize: 1, reuseIntensity: 1 });
+    counts[record.network.ip]++;
+  }
+  const ordered = Object.values(counts);
+  const ratio = Math.max(...ordered) / Math.min(...ordered);
+  assert.ok(ratio < 1.5, `24000 rounds; expected about 2000 selections/IP, counts=${JSON.stringify(counts)}, max/min=${ratio.toFixed(2)}`);
+});
+Math.random = originalRandom;
+
+console.log(JSON.stringify(results, null, 2));
+process.exitCode = results.some(x => x.status === 'FAIL') ? 1 : 0;

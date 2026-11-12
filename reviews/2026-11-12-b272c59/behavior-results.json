@@ -1,0 +1,37 @@
+[
+  {
+    "name": "default batch, interval changes, caps, stop, resume and reset",
+    "status": "PASS",
+    "evidence": "Default timing; live batch/interval updates; totals beyond 1000; 50 log row cap; no timer after stop/reset; resume adds one batch"
+  },
+  {
+    "name": "typing 1000 ms produces a 1000 ms interval",
+    "status": "FAIL",
+    "error": "Typed 1000; actual interval input is 30000\n\n'30000' !== '1000'\n"
+  },
+  {
+    "name": "log time matches browser local time or names its UTC timezone",
+    "status": "FAIL",
+    "error": "Asia/Shanghai browser local=17:00:12, log=09:00:12, no UTC indicator"
+  },
+  {
+    "name": "no runtime exceptions",
+    "status": "PASS",
+    "evidence": []
+  },
+  {
+    "name": "fixed resource identity and reuse within one simulation",
+    "status": "PASS",
+    "evidence": "100 unique devices; records reuse the same objects; success/failed only; IP subset bound at 0%, 50%, 100%"
+  },
+  {
+    "name": "device model and operating system describe possible devices",
+    "status": "FAIL",
+    "error": "Incompatible Apple devices=15; examples=[{\"deviceId\":\"DEV-001\",\"deviceModel\":\"iPad Air 5\",\"osVersion\":\"HarmonyOS 4\",\"platform\":\"Linux arm64\"},{\"deviceId\":\"DEV-003\",\"deviceModel\":\"MacBook Air M2\",\"osVersion\":\"Android 12\",\"platform\":\"Linux arm64\"},{\"deviceId\":\"DEV-005\",\"deviceModel\":\"MacBook Air M2\",\"osVersion\":\"Android 12\",\"platform\":\"Linux arm64\"}]\n\n15 !== 0\n"
+  },
+  {
+    "name": "network resource selection has no large arbitrary array-position bias",
+    "status": "FAIL",
+    "error": "24000 rounds; expected about 2000 selections/IP, counts={\"103.21.58.10\":4027,\"119.3.124.5\":1573,\"36.136.22.9\":2077,\"183.62.124.2\":2718,\"220.181.108.15\":1763,\"39.156.69.7\":1848,\"120.232.15.20\":2039,\"182.91.24.40\":2333,\"111.17.16.3\":1298,\"211.138.104.50\":1300,\"47.100.128.90\":1464,\"8.210.152.60\":1560}, max/min=3.10"
+  }
+]
