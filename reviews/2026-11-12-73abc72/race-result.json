@@ -1,0 +1,13 @@
+{
+  "case": "completion and cancellation must serialize terminal order and inventory state",
+  "status": "FAIL",
+  "evidence": {
+    "orderId": 8,
+    "cancelResponse": "cancelled",
+    "completeResponse": "completed",
+    "finalStatus": "completed",
+    "stockBeforePurchase": 7,
+    "stockAfterBothOperations": 7,
+    "expectedStockForCompletedOrder": 6
+  }
+}

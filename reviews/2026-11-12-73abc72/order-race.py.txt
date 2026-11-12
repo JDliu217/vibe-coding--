@@ -1,0 +1,33 @@
+import json, sys, uuid
+import httpx
+sys.path.insert(0,'/workspace/vibe-coding--/consumer/libs/common')
+sys.path.insert(0,'/workspace/vibe-coding--/consumer/services/order-service')
+from common.db import SessionLocal
+from common.models import Order
+from app.flow import change_status
+
+base='http://127.0.0.1:8090'
+client=httpx.Client(timeout=20)
+token=client.post(base+'/api/auth/login',json={'phone':'13900001001','password':'User123456'}).json()['accessToken']
+headers={'Authorization':'Bearer '+token}
+products=client.get(base+'/api/catalog/products').json()['items']
+product=next(x for x in products if x['availableQuantity']>=2)
+initial=product['availableQuantity']
+response=client.post(base+'/api/orders',headers={**headers,'Idempotency-Key':uuid.uuid4().hex},json={'items':[{'productId':product['id'],'quantity':1}]})
+assert response.status_code==201,response.text
+order=response.json()
+with SessionLocal() as completion_session:
+    # Legal request interleaving: completion reads the order, pauses before transition;
+    # a concurrent cancellation commits; completion then resumes with its loaded ORM entity.
+    loaded=completion_session.get(Order,order['id'])
+    assert loaded.status=='created'
+    cancel=client.post(base+f"/api/orders/{order['id']}/cancel",headers=headers)
+    assert cancel.status_code==200,cancel.text
+    completed=change_status(completion_session,loaded,order['userId'],'user','completed','race-review')
+final=client.get(base+f"/api/orders/{order['id']}",headers=headers).json()
+listed=client.get(base+'/api/catalog/products').json()['items']
+stock=next(x for x in listed if x['id']==product['id'])['availableQuantity']
+evidence={'orderId':order['id'],'cancelResponse':cancel.json()['status'],'completeResponse':completed['status'],'finalStatus':final['status'],'stockBeforePurchase':initial,'stockAfterBothOperations':stock,'expectedStockForCompletedOrder':initial-1}
+passed=not(final['status']=='completed' and stock!=initial-1)
+print(json.dumps({'case':'completion and cancellation must serialize terminal order and inventory state','status':'PASS' if passed else 'FAIL','evidence':evidence},ensure_ascii=False,indent=2))
+sys.exit(0 if passed else 1)

@@ -6,6 +6,7 @@
 
 | 报告 | 被审查代码提交 | 审查范围 | 结论 |
 | --- | --- | --- | --- |
+| [2026-11-12 消费者独立复核](2026-11-12-73abc72/审查结果.md) | [`73abc72f6c282cb0cafc67c88446b907f9f45c53`](https://github.com/JDliu217/vibe-coding--/commit/73abc72f6c282cb0cafc67c88446b907f9f45c53) | 当前consumer快照，源码与eaa501e一致 | 原7项通过；补查订单终态与访客购物车失败；容器路由及后台编辑尚需处理 |
 | [2026-11-12 生鲜消费端](2026-11-12-eaa501e/审查结果.md) | [`eaa501e8f1d26c36809b1501e63feb7b50b22e51`](https://github.com/JDliu217/vibe-coding--/commit/eaa501e8f1d26c36809b1501e63feb7b50b22e51) | 4a0b2fc至eaa501e，消费端改为生鲜商城 | 本机购物闭环和 7 项测试通过；Docker 与 RQG 未运行 |
 | [2026-11-12 消费端新人领券](2026-11-12-e8d62ad/审查结果.md) | [`e8d62ad769fa45f4a2ceac89015dfff2fa432f6e`](https://github.com/JDliu217/vibe-coding--/commit/e8d62ad769fa45f4a2ceac89015dfff2fa432f6e) | 2d11433至e8d62ad，新增 consumer 领券站点 | 单人领券路径可用；并发与风控未测；RQG未运行，不记为通过 |
 | [2026-11-12 攻击方目录归位](2026-11-12-9e8ad0d/审查结果.md) | [`9e8ad0d041b229c4f5db8fa60771b523c746621e`](https://github.com/JDliu217/vibe-coding--/commit/9e8ad0d041b229c4f5db8fa60771b523c746621e) | 64adccd至9e8ad0d，攻击方移入 attacker/ | 读取链路可用；写路径未复测；RQG未运行，不记为通过 |

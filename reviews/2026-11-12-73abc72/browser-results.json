@@ -1,0 +1,35 @@
+[
+  {
+    "name": "registered user buys a product, views order and cancels through real services",
+    "status": "PASS",
+    "evidence": {
+      "orderPath": "/orders/9",
+      "status": "cancelled",
+      "browserExceptions": 0
+    }
+  },
+  {
+    "name": "admin can open overview and catalog; existing-product edit controls are inventoried",
+    "status": "PASS",
+    "evidence": {
+      "productRows": 12,
+      "editButtons": 0,
+      "rowButtons": [
+        "下架"
+      ]
+    }
+  },
+  {
+    "name": "guest cart survives login required at checkout",
+    "status": "FAIL",
+    "error": "{\"url\":\"/cart\",\"checkoutButtons\":0,\"emptyCart\":1}\n\n0 !== 1\n"
+  },
+  {
+    "name": "mobile product page fits the viewport",
+    "status": "PASS",
+    "evidence": {
+      "body": 390,
+      "viewport": 390
+    }
+  }
+]
