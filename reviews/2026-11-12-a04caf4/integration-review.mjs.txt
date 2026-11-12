@@ -1,0 +1,42 @@
+import assert from 'node:assert/strict';
+import {chromium} from '/workspace/.onboarding-tools/node_modules/playwright/index.mjs';
+const base='http://127.0.0.1:5173';
+const results=[];
+async function check(name,fn){try{results.push({name,status:'PASS',evidence:await fn()});}catch(error){results.push({name,status:'FAIL',error:error.message});}}
+async function reset(){const r=await fetch(base+'/api/reset',{method:'POST'});assert.equal(r.status,200);}
+async function state(){const r=await fetch(base+'/api/state');assert.equal(r.status,200);return r.json();}
+const browser=await chromium.launch({executablePath:'/usr/bin/chromium',headless:true,args:['--no-sandbox']});
+await check('real frontend to FastAPI to MySQL persists a batch and reloads its counters',async()=>{
+  await reset();const page=await browser.newPage();await page.goto(base);
+  await page.waitForTimeout(200);
+  await page.locator('input[type=number]').first().fill('5');
+  await page.getByRole('button',{name:'开始注册',exact:true}).click();
+  await page.waitForFunction(()=>document.querySelector('.value.accent').textContent==='5');
+  await page.getByRole('button',{name:'停止注册',exact:true}).click();
+  await page.waitForTimeout(100);await page.reload();
+  await page.waitForFunction(()=>document.querySelector('.value.accent').textContent==='5');
+  assert.equal(await page.locator('.pill').innerText(),'已完成');
+  const data=await state();assert.equal(data.stats.total,5);assert.equal(data.stats.rounds,1);
+  await page.close();return {total:data.stats.total,rounds:data.stats.rounds,status:data.status};
+});
+await check('real reset stays empty when a previously committed tick response arrives late',async()=>{
+  await reset();const page=await browser.newPage();
+  let release,committed;
+  const gate=new Promise(r=>{release=r;});const ready=new Promise(r=>{committed=r;});
+  await page.route('**/api/batches/*/tick',async route=>{
+    const response=await route.fetch();
+    assert.equal(response.status(),200);
+    committed();await gate;await route.fulfill({response});
+  });
+  await page.goto(base);await page.waitForTimeout(200);
+  await page.getByRole('button',{name:'开始注册',exact:true}).click();await ready;
+  const beforeReset=await state();assert.equal(beforeReset.stats.total,20);
+  await page.getByRole('button',{name:'重置',exact:true}).click();
+  await page.waitForFunction(()=>document.querySelector('.pill').innerText==='未开始');
+  const afterReset=await state();assert.equal(afterReset.stats.total,0);
+  release();await page.waitForTimeout(250);
+  const observed={databaseTotal:(await state()).stats.total,uiTotal:await page.locator('.value.accent').innerText(),uiStatus:await page.locator('.pill').innerText(),uiRows:await page.locator('.log-table .row:not(.head)').count()};
+  await page.close();
+  assert.equal(Number(observed.uiTotal),observed.databaseTotal,JSON.stringify(observed));
+});
+await browser.close();await reset();console.log(JSON.stringify(results,null,2));process.exitCode=results.some(r=>r.status==='FAIL')?1:0;

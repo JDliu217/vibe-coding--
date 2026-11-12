@@ -1,0 +1,97 @@
+import json
+import sys
+import threading
+from concurrent.futures import ThreadPoolExecutor
+from pathlib import Path
+
+sys.path.insert(0, '/workspace/vibe-coding--/server')
+from fastapi.testclient import TestClient
+from sqlalchemy import event, func, select
+from sqlalchemy.orm import Session
+from app.main import app
+from app.database import SessionLocal, engine
+from app.models import Account, Batch, Device, NetworkExit, PhoneNumber, Submission, SyntheticDevice
+from app.registration import reset_ledger, run_tick, start_batch
+from app.schemas import StartIn, TickIn
+
+results=[]
+def check(name,fn):
+    try: results.append({'name':name,'status':'PASS','evidence':fn()})
+    except Exception as error: results.append({'name':name,'status':'FAIL','error':str(error)})
+
+def counts():
+    with SessionLocal() as session:
+        data={model.__tablename__:session.scalar(select(func.count()).select_from(model)) for model in [Device,NetworkExit,PhoneNumber,Batch,SyntheticDevice,Account,Submission]}
+        data['assigned']=session.scalar(select(func.count()).select_from(PhoneNumber).where(PhoneNumber.status=='assigned'))
+        return data
+
+def reset():
+    with SessionLocal() as session: reset_ledger(session)
+
+settings={'reuseIntensity':0.5,'batchSize':20,'intervalMs':500}
+with TestClient(app) as client:
+    def normal():
+        reset()
+        response=client.post('/api/batches',json=settings);assert response.status_code==200,response.text
+        batch=response.json()['batchId']
+        response=client.post(f'/api/batches/{batch}/tick',json={k:settings[k] for k in ['reuseIntensity','batchSize']})
+        assert response.status_code==200,response.text
+        state=response.json();assert state['stats']['total']==20
+        assert state['stats']['success']+state['stats']['failed']==20
+        assert state['stats']['rounds']==1
+        actual=counts();assert actual['synthetic_devices']==actual['accounts']==actual['submissions']==actual['assigned']==20,actual
+        assert actual['devices']==100 and actual['network_exits']==12 and actual['phone_numbers']==1000
+        with SessionLocal() as session:
+            assert session.scalar(select(func.count()).select_from(Submission).where(Submission.result_source!='placeholder'))==0
+        response=client.post(f'/api/batches/{batch}/stop');assert response.status_code==200,response.text
+        frozen=counts()
+        response=client.post(f'/api/batches/{batch}/tick',json={'batchSize':20,'reuseIntensity':0.5});assert response.status_code==409,response.text
+        assert counts()==frozen
+        client.post('/api/reset').raise_for_status()
+        cleared=counts();assert cleared['accounts']==cleared['submissions']==cleared['synthetic_devices']==cleared['batches']==cleared['assigned']==0
+        return {'after_tick':actual,'after_reset':cleared,'stopped_tick_status':409}
+    check('real MySQL API normal transaction, finite resources, stop and reset',normal)
+
+    def rollback():
+        reset()
+        with SessionLocal() as session:
+            batch=start_batch(session,StartIn(**settings)).batchId
+        before=counts()
+        def fail_on_submission(session,flush_context,instances):
+            if any(isinstance(obj,Submission) for obj in session.new):raise RuntimeError('controlled write failure')
+        event.listen(Session,'before_flush',fail_on_submission)
+        try:
+            with SessionLocal() as session:
+                try:run_tick(session,batch,TickIn(batchSize=20,reuseIntensity=0.5))
+                except RuntimeError as error:assert str(error)=='controlled write failure'
+                else:raise AssertionError('failure injection not reached')
+        finally:event.remove(Session,'before_flush',fail_on_submission)
+        after=counts();assert after==before,{'before':before,'after':after}
+        reset();return 'Controlled mid-round ORM write error rolls back all inserted objects, phone assignments and round count on real MySQL'
+    check('whole-round rollback on a controlled write failure',rollback)
+
+    def concurrent_start():
+        reset()
+        barrier=threading.Barrier(2)
+        def after_select(conn,cursor,statement,params,context,executemany):
+            if statement.lstrip().upper().startswith('SELECT BATCHES.ID') and 'WHERE batches.status' in statement and 'LIMIT' in statement:
+                barrier.wait(timeout=8)
+        event.listen(engine,'after_cursor_execute',after_select)
+        def begin():
+            with SessionLocal() as session:
+                return start_batch(session,StartIn(**settings)).batchId
+        try:
+            with ThreadPoolExecutor(max_workers=2) as executor:
+                futures=[executor.submit(begin) for _ in range(2)]
+                returned=[future.result(timeout=12) for future in futures]
+        finally:event.remove(engine,'after_cursor_execute',after_select)
+        with SessionLocal() as session:
+            active=session.scalars(select(Batch.id).where(Batch.status=='running')).all()
+        evidence={'returnedBatchIds':returned,'runningBatchIds':active,'runningCount':len(active)}
+        reset()
+        assert len(active)<=1,json.dumps(evidence)
+        return evidence
+    check('concurrent starts must preserve at most one running batch',concurrent_start)
+
+print(json.dumps(results,ensure_ascii=False,indent=2))
+sys.exit(1 if any(x['status']=='FAIL' for x in results) else 0)

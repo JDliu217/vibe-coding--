@@ -1,0 +1,76 @@
+import assert from 'node:assert/strict';
+import { chromium } from '/workspace/.onboarding-tools/node_modules/playwright/index.mjs';
+const browser = await chromium.launch({executablePath:'/usr/bin/chromium',headless:true,args:['--no-sandbox']});
+const result=[];
+const idle=()=>({status:'idle',batchId:null,reuseIntensity:0.5,batchSize:20,intervalMs:500,stats:{total:0,success:0,failed:0,rounds:0},submissions:[]});
+const running=()=>({...idle(),status:'running',batchId:1});
+const completedTick=()=>({...running(),stats:{total:20,success:16,failed:4,rounds:1},submissions:[{id:'REG-00001',phone:'13800000001',createdAt:'2026-11-12 18:00:00',deviceId:'SYN-00001',deviceModel:'test',ip:'192.0.2.1',isp:'test',region:'test',status:'success'}]});
+async function check(name,fn){try{const evidence=await fn();result.push({name,status:'PASS',evidence});}catch(e){result.push({name,status:'FAIL',error:e.message});}}
+async function pageWithApi(handler){
+  const page=await browser.newPage();
+  await page.route('**/api/**',handler);
+  await page.goto('http://127.0.0.1:5173/');
+  await page.getByRole('heading',{name:'攻击模拟控制台',exact:true}).waitFor();
+  await page.waitForTimeout(150);
+  return page;
+}
+const send=(route,data,status=200)=>route.fulfill({status,contentType:'application/json',body:JSON.stringify(data)});
+await check('normal start, first tick, stop and reset respect API state',async()=>{
+  let state=idle(),ticks=0;
+  const page=await pageWithApi(async route=>{
+    const path=new URL(route.request().url()).pathname;
+    if(path==='/api/batches')state=running();
+    if(path.endsWith('/tick')){ticks++;state=completedTick();}
+    if(path.endsWith('/stop'))state={...state,status:'done'};
+    if(path==='/api/reset')state=idle();
+    await send(route,state);
+  });
+  await page.getByRole('button',{name:'开始注册',exact:true}).click();
+  await page.waitForFunction(()=>document.querySelector('.value.accent').textContent==='20');
+  await page.getByRole('button',{name:'停止注册',exact:true}).click();
+  await page.waitForFunction(()=>document.querySelector('.pill').innerText==='已完成');
+  const stopped=ticks;await page.waitForTimeout(650);assert.equal(ticks,stopped);
+  await page.getByRole('button',{name:'重置',exact:true}).click();
+  await page.waitForFunction(()=>document.querySelector('.pill').innerText==='未开始');
+  assert.deepEqual(await page.locator('.stats .value').allTextContents(),['0','0','0','0']);
+  await page.close();return 'API-controlled normal lifecycle and timer cleanup pass';
+});
+await check('a tick response received after reset must not restore cleared counters or rows',async()=>{
+  let release,arrived;
+  const waiting=new Promise(r=>{release=r;});const started=new Promise(r=>{arrived=r;});
+  const page=await pageWithApi(async route=>{
+    const path=new URL(route.request().url()).pathname;
+    if(path.endsWith('/tick')){arrived();await waiting;return send(route,completedTick());}
+    return send(route,path==='/api/batches'?running():idle());
+  });
+  await page.getByRole('button',{name:'开始注册',exact:true}).click();await started;
+  await page.getByRole('button',{name:'重置',exact:true}).click();
+  await page.waitForFunction(()=>document.querySelector('.pill').innerText==='未开始');
+  assert.equal(await page.locator('.value.accent').innerText(),'0');
+  release();await page.waitForTimeout(200);
+  const actual={state:await page.locator('.pill').innerText(),total:await page.locator('.value.accent').innerText(),rows:await page.locator('.log-table .row:not(.head)').count()};
+  await page.close();
+  assert.deepEqual(actual,{state:'未开始',total:'0',rows:0});
+});
+await check('rapid repeated start must not leave running UI with no active timer work',async()=>{
+  let starts=0,ticks=0,releaseSecond;
+  const waitSecond=new Promise(r=>{releaseSecond=r;});
+  const page=await pageWithApi(async route=>{
+    const path=new URL(route.request().url()).pathname;
+    if(path==='/api/batches'){
+      starts++;
+      if(starts===1){await new Promise(r=>setTimeout(r,150));return send(route,running());}
+      await waitSecond;return send(route,{detail:'已有注册任务在运行'},409);
+    }
+    if(path.endsWith('/tick')){ticks++;return send(route,completedTick());}
+    return send(route,idle());
+  });
+  await page.getByRole('button',{name:'开始注册',exact:true}).dblclick({delay:25});
+  await page.waitForFunction(()=>document.querySelector('.value.accent').textContent==='20');
+  releaseSecond();await page.waitForTimeout(200);
+  const before=ticks;await page.waitForTimeout(1100);
+  const actual={starts,state:await page.locator('.pill').innerText(),error:await page.locator('.status-error').innerText(),ticksBefore:before,ticksAfter:ticks};
+  await page.close();
+  assert.ok(actual.starts===1 || actual.state!=='运行中' || actual.ticksAfter>actual.ticksBefore,JSON.stringify(actual));
+});
+await browser.close();console.log(JSON.stringify(result,null,2));process.exitCode=result.some(x=>x.status==='FAIL')?1:0;

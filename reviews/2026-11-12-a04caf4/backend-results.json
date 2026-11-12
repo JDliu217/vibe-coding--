@@ -1,0 +1,39 @@
+[
+  {
+    "name": "real MySQL API normal transaction, finite resources, stop and reset",
+    "status": "PASS",
+    "evidence": {
+      "after_tick": {
+        "devices": 100,
+        "network_exits": 12,
+        "phone_numbers": 1000,
+        "batches": 1,
+        "synthetic_devices": 20,
+        "accounts": 20,
+        "submissions": 20,
+        "assigned": 20
+      },
+      "after_reset": {
+        "devices": 100,
+        "network_exits": 12,
+        "phone_numbers": 1000,
+        "batches": 0,
+        "synthetic_devices": 0,
+        "accounts": 0,
+        "submissions": 0,
+        "assigned": 0
+      },
+      "stopped_tick_status": 409
+    }
+  },
+  {
+    "name": "whole-round rollback on a controlled write failure",
+    "status": "PASS",
+    "evidence": "Controlled mid-round ORM write error rolls back all inserted objects, phone assignments and round count on real MySQL"
+  },
+  {
+    "name": "concurrent starts must preserve at most one running batch",
+    "status": "FAIL",
+    "error": "{\"returnedBatchIds\": [4, 4], \"runningBatchIds\": [3, 4], \"runningCount\": 2}"
+  }
+]

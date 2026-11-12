@@ -1,0 +1,99 @@
+[QG] runtime bootstrap: /workspace/.review-skills/.agents/skills/repository-quality-guard
+[QG] Python 锁定依赖已就绪。
+[QG] Node 锁定依赖缓存已就绪: /workspace/.review-skills/cache/node/nanoid-3.3.11-picocolors-1.1.1-postcss-8.5.6-source-map-js-1.2.1-typescript-5.8.3/node_modules
+Skill 完整性门禁：PASS（364 个受保护文件）
+[QG] command finished rc=0; runtime cleanup complete.
+# 仓库证据 Trace（静态，非运行时 Traceback）
+
+来源：`/workspace/vibe-coding--` · `WORKTREE` · `cache=MISS/REBUILT snapshot=9b8af77bbf5b6b87`
+目标：`server.app.registration.run_tick` @ `server/app/registration.py:123` · `function`
+
+**OPEN_WORLD**：DIRECT_CALL 是源码绑定；MAY_DISPATCH 是类型约束的可能目标，MAY_CALLBACK 是有调度器证据的可能执行，运行时均 OPEN；词法同名仍 UNKNOWN。三者都不证明该路径执行过或缺省业务合理。
+
+## 定义及所在代码
+
+     121:
+     122:
+ >   123: def run_tick(session: Session, batch_id: int, body: TickIn) -> StateOut:
+     124:     try:
+     125:         batch = session.get(Batch, batch_id, with_for_update=True)
+
+## callers: 静态调用链（深度 2）
+
+- 当前 Provider 未解析出该方向 DIRECT_CALL/MAY_DISPATCH；不等于不存在真实调用
+
+## callees: 静态调用链（深度 2）
+
+- `server.app.registration.run_tick` → `server.app.registration.RegistrationError.__init__` [DIRECT_CALL, resolved]
+  - CALL SITE `server/app/registration.py:127` confidence=high
+     125:         batch = session.get(Batch, batch_id, with_for_update=True)
+     126:         if batch is None or batch.status != "running":
+ >   127:             raise RegistrationError("任务已停止")
+     128:
+     129:         exits = list(session.scalars(select(NetworkExit)).all())
+- `server.app.registration.run_tick` → `server.app.registration.RegistrationError.__init__` [DIRECT_CALL, resolved]
+  - CALL SITE `server/app/registration.py:132` confidence=high
+     130:         devices = list(session.scalars(select(Device)).all())
+     131:         if not exits or not devices:
+ >   132:             raise RegistrationError("资源库还没有设备或出口 IP")
+     133:
+     134:         distinct = max(1, math.ceil(len(exits) * (1 - body.reuseIntensity)))
+- `server.app.registration.run_tick` → `server.app.registration.RegistrationError.__init__` [DIRECT_CALL, resolved]
+  - CALL SITE `server/app/registration.py:146` confidence=high
+     144:         )
+     145:         if len(phones) < body.batchSize:
+ >   146:             raise RegistrationError("手机号已用完，请重置后再注册")
+     147:
+     148:         base = session.scalar(select(func.coalesce(func.max(SyntheticDevice.id), 0))) or 0
+- `server.app.registration.run_tick` → `server.app.registration._stamp` [DIRECT_CALL, resolved]
+  - CALL SITE `server/app/registration.py:150` confidence=high
+     148:         base = session.scalar(select(func.coalesce(func.max(SyntheticDevice.id), 0))) or 0
+     149:         moment = datetime.now().replace(microsecond=0)
+ >   150:         stamp = _stamp(moment)
+     151:
+     152:         for index, phone in enumerate(phones, start=1):
+- `server.app.registration.run_tick` → `server.app.registration._mint_synthetic` [DIRECT_CALL, resolved]
+  - CALL SITE `server/app/registration.py:155` confidence=high
+     153:             parent = random.choice(devices)
+     154:             chosen_ip = random.choice(subset)
+ >   155:             synthetic = _mint_synthetic(parent, batch.id, f"SYN-{base + index:05d}", moment)
+     156:             session.add(synthetic)
+     157:             session.flush()
+- `server.app.registration.run_tick` → `server.app.registration.read_state` [DIRECT_CALL, resolved]
+  - CALL SITE `server/app/registration.py:213` confidence=high
+     211:         session.rollback()
+     212:         raise
+ >   213:     return read_state(session)
+     214:
+     215:
+- `server.app.registration.run_tick` → `server.app.registration._mint_synthetic` → `server.app.registration._short_hash` [DIRECT_CALL, resolved]
+  - CALL SITE `server/app/registration.py:236` confidence=high
+     234:         touch_support=parent.touch_support,
+     235:         webgl_renderer=parent.webgl_renderer,
+ >   236:         audio_context_fingerprint=_short_hash(parent.audio_context_fingerprint + salt),
+     237:         canvas_fingerprint=_short_hash(parent.canvas_fingerprint + salt),
+     238:         timezone=parent.timezone,
+- `server.app.registration.run_tick` → `server.app.registration._mint_synthetic` → `server.app.registration._short_hash` [DIRECT_CALL, resolved]
+  - CALL SITE `server/app/registration.py:237` confidence=high
+     235:         webgl_renderer=parent.webgl_renderer,
+     236:         audio_context_fingerprint=_short_hash(parent.audio_context_fingerprint + salt),
+ >   237:         canvas_fingerprint=_short_hash(parent.canvas_fingerprint + salt),
+     238:         timezone=parent.timezone,
+     239:         language=parent.language,
+- `server.app.registration.run_tick` → `server.app.registration._mint_synthetic` → `server.app.registration._webrtc_ip` [DIRECT_CALL, resolved]
+  - CALL SITE `server/app/registration.py:242` confidence=high
+     240:         cookie_enabled=parent.cookie_enabled,
+     241:         local_storage_enabled=parent.local_storage_enabled,
+ >   242:         webrtc_local_ip=_webrtc_ip(),
+     243:         font_list_hash=parent.font_list_hash,
+     244:         created_at=moment,
+- `server.app.registration.run_tick` → `server.app.registration.read_state` → `server.app.registration._to_submission` [DIRECT_CALL, resolved]
+  - CALL SITE `server/app/registration.py:53` confidence=high
+      51:
+      52:     rows = session.scalars(select(Submission).order_by(Submission.id.desc()).limit(50)).all()
+ >    53:     submissions = [_to_submission(row) for row in rows]
+      54:     return StateOut(
+      55:         status=status,
+- **TRUNCATED**：已达调用边预算
+
+结论边界：需人工检查完整 Producer、所有合法入口、Guard 支配、状态变更与真实可达 Cases；未知不得判定 CODE_BUG 或 RULE_BUG。

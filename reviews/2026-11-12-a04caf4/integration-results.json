@@ -1,0 +1,16 @@
+[
+  {
+    "name": "real frontend to FastAPI to MySQL persists a batch and reloads its counters",
+    "status": "PASS",
+    "evidence": {
+      "total": 5,
+      "rounds": 1,
+      "status": "done"
+    }
+  },
+  {
+    "name": "real reset stays empty when a previously committed tick response arrives late",
+    "status": "FAIL",
+    "error": "{\"databaseTotal\":0,\"uiTotal\":\"20\",\"uiStatus\":\"未开始\",\"uiRows\":20}\n\n20 !== 0\n"
+  }
+]

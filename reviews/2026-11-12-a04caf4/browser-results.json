@@ -1,0 +1,17 @@
+[
+  {
+    "name": "normal start, first tick, stop and reset respect API state",
+    "status": "PASS",
+    "evidence": "API-controlled normal lifecycle and timer cleanup pass"
+  },
+  {
+    "name": "a tick response received after reset must not restore cleared counters or rows",
+    "status": "FAIL",
+    "error": "Expected values to be strictly deep-equal:\n+ actual - expected\n\n  {\n+   rows: 1,\n-   rows: 0,\n    state: '未开始',\n+   total: '20'\n-   total: '0'\n  }\n"
+  },
+  {
+    "name": "rapid repeated start must not leave running UI with no active timer work",
+    "status": "FAIL",
+    "error": "{\"starts\":2,\"state\":\"运行中\",\"error\":\"已有注册任务在运行\",\"ticksBefore\":1,\"ticksAfter\":1}"
+  }
+]

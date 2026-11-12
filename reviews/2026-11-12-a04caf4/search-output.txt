@@ -1,0 +1,18 @@
+[QG] runtime bootstrap: /workspace/.review-skills/.agents/skills/repository-quality-guard
+[QG] Python 锁定依赖已就绪。
+[QG] Node 锁定依赖缓存已就绪: /workspace/.review-skills/cache/node/nanoid-3.3.11-picocolors-1.1.1-postcss-8.5.6-source-map-js-1.2.1-typescript-5.8.3/node_modules
+[QG] command finished rc=0; runtime cleanup complete.
+Skill 完整性门禁：PASS（364 个受保护文件）
+[QG] No profile selected; using generic policy. (source=generic)
+doc-search PASS refresh=noop changed_files=0 prepare=0.0036s index=0.0018s search=0.162ms total=0.0055s
+ 1. server.app.settings.database_url score=47.121 server/app/settings.py:22 [public]
+ 2. server.app.models.Account score=36.755 server/app/models.py:106 [public]
+ 3. server.app.registration.stop_batch score=32.672 server/app/registration.py:104 [public]
+ 4. server.app.registration.read_state score=30.538 server/app/registration.py:38 [public]
+ 5. server.app.registration.start_batch score=30.144 server/app/registration.py:85 [public]
+ 6. server.app.models.Device score=29.357 server/app/models.py:13 [public]
+ 7. server.app.registration._mint_synthetic score=27.693 server/app/registration.py:216 [private]
+ 8. server.app.models.SyntheticDevice score=25.282 server/app/models.py:74 [public]
+ 9. server.app.main.state score=24.544 server/app/main.py:40 [public]
+10. server.app.registration.RegistrationError score=21.616 server/app/registration.py:20 [public]
+候选仅用于高召回；必须阅读 TopK 真实源码与调用方后再作复用/所有权裁决。
