@@ -21,3 +21,11 @@ Thumbs.db
 # IDE
 .vscode/
 .idea/
+
+# Local secrets
+.env
+
+# Python
+server/.venv/
+__pycache__/
+*.pyc

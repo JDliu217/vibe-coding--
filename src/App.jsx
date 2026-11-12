@@ -1,94 +1,145 @@
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import './App.css';
-import {
-  generateDeviceDB,
-  generateRegistrationBatch,
-  DEFAULT_BATCH_SIZE,
-  DEFAULT_INTERVAL_MS,
-} from './mockData';
+import { fetchState, resetLedger, startBatch, stopBatch, tickBatch } from './api';
 
 const STATUS_TEXT = { idle: '未开始', running: '运行中', done: '已完成' };
+const EMPTY_STATS = { total: 0, success: 0, failed: 0, rounds: 0 };
 
 export default function App() {
-  const [deviceDB] = useState(() => generateDeviceDB());
-  const [registrations, setRegistrations] = useState([]);
+  const [submissions, setSubmissions] = useState([]);
   const [status, setStatus] = useState('idle');
-  const [rounds, setRounds] = useState(0);
+  const [stats, setStats] = useState(EMPTY_STATS);
   const [reuseIntensity, setReuseIntensity] = useState(0.5);
-  const [batchSize, setBatchSize] = useState(DEFAULT_BATCH_SIZE);
-  const [intervalMs, setIntervalMs] = useState(DEFAULT_INTERVAL_MS);
+  const [batchSize, setBatchSize] = useState(20);
+  const [intervalMs, setIntervalMs] = useState(3000);
+  const [error, setError] = useState('');
 
-  // 真实累计计数（不因日志截断而失真）
-  const counterRef = useRef(0);
-  const successRef = useRef(0);
-  const failedRef = useRef(0);
   const timerRef = useRef(null);
-  const settingsRef = useRef({ batchSize, reuseIntensity, intervalMs });
-  settingsRef.current = { batchSize, reuseIntensity, intervalMs };
+  const runningRef = useRef(false);
+  const tickingRef = useRef(false);
+  const batchIdRef = useRef(null);
+  const settingsRef = useRef({ batchSize, reuseIntensity });
+  settingsRef.current = { batchSize, reuseIntensity };
 
-  // 执行一轮注册（读取当前设置 + 设备资源库，写入模拟防守方库）
-  const step = useCallback(() => {
-    const { batchSize: bs, reuseIntensity: ri } = settingsRef.current;
-    const batch = generateRegistrationBatch({
-      batchSize: bs,
-      reuseIntensity: ri,
-      counter: counterRef.current,
-      deviceDB,
-    });
-    counterRef.current += bs;
-    for (const r of batch) {
-      if (r.status === 'success') successRef.current += 1;
-      else failedRef.current += 1;
+  const applyState = (data, includeSettings = false) => {
+    batchIdRef.current = data.batchId;
+    setStats(data.stats);
+    setSubmissions(data.submissions);
+    setStatus(data.status);
+    if (includeSettings) {
+      setReuseIntensity(data.reuseIntensity);
+      setBatchSize(data.batchSize);
+      setIntervalMs(data.intervalMs);
     }
-    setRegistrations((prev) => [...prev, ...batch].slice(-1000));
-    setRounds((r) => r + 1);
-  }, [deviceDB]);
-
-  const start = () => {
-    if (timerRef.current) return;
-    setStatus('running');
-    step();
-    timerRef.current = setInterval(step, settingsRef.current.intervalMs);
   };
 
-  const stop = () => {
+  const tick = async () => {
+    if (!runningRef.current || !batchIdRef.current || tickingRef.current) return;
+    tickingRef.current = true;
+    try {
+      const data = await tickBatch(batchIdRef.current, settingsRef.current);
+      setStats(data.stats);
+      setSubmissions(data.submissions);
+      if (runningRef.current) setStatus(data.status);
+      setError('');
+    } catch (err) {
+      runningRef.current = false;
+      setStatus('done');
+      setError(err.message || '本轮注册失败');
+      if (batchIdRef.current) {
+        stopBatch(batchIdRef.current).catch(() => {});
+      }
+    } finally {
+      tickingRef.current = false;
+    }
+  };
+
+  const tickRef = useRef(tick);
+  tickRef.current = tick;
+
+  useEffect(() => {
+    let cancel = false;
+    fetchState()
+      .then((data) => {
+        if (cancel) return;
+        applyState(data, true);
+        if (data.status === 'running') {
+          runningRef.current = true;
+          batchIdRef.current = data.batchId;
+        }
+      })
+      .catch(() => {
+        if (!cancel) setError('后端未启动，请先运行 Python API');
+      });
+    return () => {
+      cancel = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (status !== 'running') return undefined;
+    const timer = setInterval(() => {
+      tickRef.current();
+    }, intervalMs);
+    timerRef.current = timer;
+    return () => {
+      clearInterval(timer);
+      if (timerRef.current === timer) timerRef.current = null;
+    };
+  }, [status, intervalMs]);
+
+  const start = async () => {
+    if (runningRef.current || tickingRef.current) return;
+    setError('');
+    try {
+      const data = await startBatch({
+        reuseIntensity,
+        batchSize,
+        intervalMs,
+      });
+      batchIdRef.current = data.batchId;
+      runningRef.current = true;
+      setStatus('running');
+      await tick();
+    } catch (err) {
+      runningRef.current = false;
+      setError(err.message || '无法开始注册');
+    }
+  };
+
+  const stop = async () => {
+    runningRef.current = false;
     if (timerRef.current) {
       clearInterval(timerRef.current);
       timerRef.current = null;
     }
     setStatus('done');
+    if (!batchIdRef.current) return;
+    try {
+      const data = await stopBatch(batchIdRef.current);
+      applyState(data);
+      setStatus('done');
+    } catch (err) {
+      setError(err.message || '停止失败');
+    }
   };
 
-  const reset = () => {
+  const reset = async () => {
+    runningRef.current = false;
     if (timerRef.current) {
       clearInterval(timerRef.current);
       timerRef.current = null;
     }
-    counterRef.current = 0;
-    successRef.current = 0;
-    failedRef.current = 0;
-    setRegistrations([]);
-    setRounds(0);
-    setStatus('idle');
+    try {
+      const data = await resetLedger();
+      applyState(data);
+      setError('');
+    } catch (err) {
+      setError(err.message || '重置失败');
+    }
   };
 
-  useEffect(() => () => {
-    if (timerRef.current) clearInterval(timerRef.current);
-  }, []);
-
-  // 运行中调整间隔时立即生效
-  useEffect(() => {
-    if (status === 'running') {
-      clearInterval(timerRef.current);
-      timerRef.current = setInterval(step, intervalMs);
-    }
-  }, [intervalMs, status, step]);
-
-  const total = counterRef.current;
-  const success = successRef.current;
-  const failed = failedRef.current;
   const isRunning = status === 'running';
-  const logRows = [...registrations].reverse().slice(0, 50);
 
   return (
     <div className="app">
@@ -106,6 +157,7 @@ export default function App() {
         <span className="status-hint">
           每轮 {batchSize} 个账号 · 间隔 {intervalMs} ms · 出口复用强度 {(reuseIntensity * 100).toFixed(0)}%
         </span>
+        {error && <span className="status-error">{error}</span>}
       </div>
 
       <div className="controls">
@@ -119,7 +171,6 @@ export default function App() {
             max="100"
             value={Math.round(reuseIntensity * 100)}
             onChange={(e) => setReuseIntensity(parseInt(e.target.value, 10) / 100)}
-            disabled={false}
           />
           <span className="range-labels">
             <span>低（IP 分散）</span>
@@ -165,19 +216,19 @@ export default function App() {
       <div className="stats">
         <div className="card">
           <div className="label">总注册数</div>
-          <div className="value accent">{total}</div>
+          <div className="value accent">{stats.total}</div>
         </div>
         <div className="card">
           <div className="label">成功</div>
-          <div className="value success">{success}</div>
+          <div className="value success">{stats.success}</div>
         </div>
         <div className="card">
           <div className="label">失败</div>
-          <div className="value failed">{failed}</div>
+          <div className="value failed">{stats.failed}</div>
         </div>
         <div className="card">
           <div className="label">已执行轮数</div>
-          <div className="value">{rounds}</div>
+          <div className="value">{stats.rounds}</div>
         </div>
       </div>
 
@@ -196,23 +247,23 @@ export default function App() {
             <div className="cell">运营商 · 地区</div>
             <div className="cell">状态</div>
           </div>
-          {logRows.map((r) => (
-            <div key={r.id} className={`row ${r.status}`}>
-              <div className="cell mono">{r.createdAt.slice(11)}</div>
-              <div className="cell mono">{r.phone}</div>
-              <div className="cell mono">{r.device?.deviceId ?? '-'}</div>
-              <div className="cell">{r.device?.deviceModel ?? '-'}</div>
-              <div className="cell mono">{r.network.ip}</div>
-              <div className="cell">{r.network.isp} · {r.network.region}</div>
+          {submissions.map((row) => (
+            <div key={row.id} className={`row ${row.status}`}>
+              <div className="cell mono">{row.createdAt.slice(11)}</div>
+              <div className="cell mono">{row.phone}</div>
+              <div className="cell mono">{row.deviceId}</div>
+              <div className="cell">{row.deviceModel}</div>
+              <div className="cell mono">{row.ip}</div>
+              <div className="cell">{row.isp} · {row.region}</div>
               <div className="cell">
-                <span className={`tag ${r.status}`}>
-                  {r.status === 'success' ? '成功' : '失败'}
+                <span className={`tag ${row.status}`}>
+                  {row.status === 'success' ? '成功' : '失败'}
                 </span>
               </div>
             </div>
           ))}
         </div>
-        {registrations.length === 0 && (
+        {submissions.length === 0 && (
           <div className="empty">尚未开始注册，点击“开始注册”发起攻击模拟。</div>
         )}
       </section>
