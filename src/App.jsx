@@ -13,10 +13,13 @@ export default function App() {
   const [batchSize, setBatchSize] = useState(20);
   const [intervalMs, setIntervalMs] = useState(3000);
   const [error, setError] = useState('');
+  const [starting, setStarting] = useState(false);
 
   const timerRef = useRef(null);
   const runningRef = useRef(false);
   const tickingRef = useRef(false);
+  const startingRef = useRef(false);
+  const generationRef = useRef(0);
   const batchIdRef = useRef(null);
   const settingsRef = useRef({ batchSize, reuseIntensity });
   settingsRef.current = { batchSize, reuseIntensity };
@@ -35,20 +38,22 @@ export default function App() {
 
   const tick = async () => {
     if (!runningRef.current || !batchIdRef.current || tickingRef.current) return;
+    const generation = generationRef.current;
+    const batchId = batchIdRef.current;
     tickingRef.current = true;
     try {
-      const data = await tickBatch(batchIdRef.current, settingsRef.current);
+      const data = await tickBatch(batchId, settingsRef.current);
+      if (generation !== generationRef.current) return;
       setStats(data.stats);
       setSubmissions(data.submissions);
       if (runningRef.current) setStatus(data.status);
       setError('');
     } catch (err) {
+      if (generation !== generationRef.current) return;
       runningRef.current = false;
       setStatus('done');
       setError(err.message || '本轮注册失败');
-      if (batchIdRef.current) {
-        stopBatch(batchIdRef.current).catch(() => {});
-      }
+      stopBatch(batchId).catch(() => {});
     } finally {
       tickingRef.current = false;
     }
@@ -89,7 +94,10 @@ export default function App() {
   }, [status, intervalMs]);
 
   const start = async () => {
-    if (runningRef.current || tickingRef.current) return;
+    if (runningRef.current || tickingRef.current || startingRef.current) return;
+    const generation = generationRef.current;
+    startingRef.current = true;
+    setStarting(true);
     setError('');
     try {
       const data = await startBatch({
@@ -97,13 +105,20 @@ export default function App() {
         batchSize,
         intervalMs,
       });
+      if (generation !== generationRef.current) {
+        if (data.batchId) stopBatch(data.batchId).catch(() => {});
+        return;
+      }
       batchIdRef.current = data.batchId;
       runningRef.current = true;
       setStatus('running');
       await tick();
     } catch (err) {
-      runningRef.current = false;
+      if (generation !== generationRef.current || runningRef.current) return;
       setError(err.message || '无法开始注册');
+    } finally {
+      startingRef.current = false;
+      setStarting(false);
     }
   };
 
@@ -125,6 +140,7 @@ export default function App() {
   };
 
   const reset = async () => {
+    generationRef.current += 1;
     runningRef.current = false;
     if (timerRef.current) {
       clearInterval(timerRef.current);
@@ -202,7 +218,11 @@ export default function App() {
         </div>
 
         <div className="actions">
-          <button className={`btn ${isRunning ? 'btn-stop' : 'btn-start'}`} onClick={isRunning ? stop : start}>
+          <button
+            className={`btn ${isRunning ? 'btn-stop' : 'btn-start'}`}
+            onClick={isRunning ? stop : start}
+            disabled={!isRunning && starting}
+          >
             {isRunning ? '停止注册' : '开始注册'}
           </button>
           {status !== 'idle' && (

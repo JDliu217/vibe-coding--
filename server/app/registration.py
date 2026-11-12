@@ -4,7 +4,7 @@ import math
 import random
 from datetime import datetime
 
-from sqlalchemy import delete, func, select, update
+from sqlalchemy import delete, func, select, text, update
 from sqlalchemy.orm import Session
 
 from app.models import Account, Batch, Device, NetworkExit, PhoneNumber, Submission, SyntheticDevice
@@ -82,12 +82,23 @@ def _to_submission(row: Submission) -> SubmissionOut:
     )
 
 
+START_LOCK = "attack_console_start"
+
+
 def start_batch(session: Session, body: StartIn) -> StateOut:
-    running = session.scalar(select(Batch.id).where(Batch.status == "running").limit(1))
-    if running:
-        raise RegistrationError("已有注册任务在运行")
-    session.add(
-        Batch(
+    # 检查和插入必须落在同一把连接锁里，否则两个请求会同时通过检查。
+    acquired = session.execute(
+        text("SELECT GET_LOCK(:name, :timeout)"),
+        {"name": START_LOCK, "timeout": 10},
+    ).scalar()
+    if acquired != 1:
+        raise RegistrationError("启动繁忙，请稍后重试")
+    created_id = None
+    try:
+        running = session.scalar(select(Batch.id).where(Batch.status == "running").limit(1))
+        if running:
+            raise RegistrationError("已有注册任务在运行")
+        batch = Batch(
             reuse_intensity=body.reuseIntensity,
             batch_size=body.batchSize,
             interval_ms=body.intervalMs,
@@ -96,9 +107,17 @@ def start_batch(session: Session, body: StartIn) -> StateOut:
             started_at=datetime.now().replace(microsecond=0),
             stopped_at=None,
         )
-    )
-    session.commit()
-    return read_state(session)
+        session.add(batch)
+        session.flush()
+        created_id = batch.id
+        session.commit()
+    except Exception:
+        session.rollback()
+        raise
+    finally:
+        session.execute(text("SELECT RELEASE_LOCK(:name)"), {"name": START_LOCK})
+    state = read_state(session)
+    return state.model_copy(update={"batchId": created_id})
 
 
 def stop_batch(session: Session, batch_id: int) -> StateOut:
